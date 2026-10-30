@@ -1,0 +1,484 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstaBR</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#fafafa;color:#171717;font-family:Arial,sans-serif}
+header{height:58px;background:white;border-bottom:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;padding:0 16px;position:sticky;top:0;z-index:5}
+.logo{font-size:27px;font-weight:bold;font-family:cursive}
+button{cursor:pointer;border:0;background:none;font-size:15px}
+main{max-width:600px;margin:auto;padding-bottom:75px}
+.auth{max-width:380px;margin:65px auto;background:white;padding:25px;text-align:center}
+input,textarea{width:100%;padding:13px;margin:7px 0;border:1px solid #ddd;border-radius:5px}
+.primary{background:#0095f6;color:white;padding:12px;border-radius:6px;width:100%;font-weight:bold}
+.stories{display:flex;gap:14px;overflow-x:auto;padding:17px;background:white;border-bottom:1px solid #ddd}
+.story{min-width:67px;text-align:center;font-size:12px}
+.story img{width:62px;height:62px;border-radius:50%;object-fit:cover;border:3px solid #e1306c;padding:2px}
+.post{background:white;margin:12px 0;border:1px solid #eee}
+.posthead{display:flex;align-items:center;gap:10px;padding:12px}
+.avatar{width:36px;height:36px;border-radius:50%;object-fit:cover;background:#ddd}
+.postmedia{width:100%;max-height:600px;object-fit:contain;background:#eee}
+.actions{padding:10px;font-size:25px}
+.actions button{font-size:25px;margin-right:12px}
+.caption{padding:0 12px 12px;font-size:14px}
+nav{position:fixed;bottom:0;left:0;right:0;background:white;border-top:1px solid #ddd;display:flex;justify-content:space-around;padding:13px;z-index:10}
+nav button{font-size:23px}
+.page{padding:15px}
+.hidden{display:none!important}
+.profile{text-align:center;padding:25px}
+.profile img{width:90px;height:90px;border-radius:50%;object-fit:cover}
+.media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.media-grid img,.media-grid video{width:100%;aspect-ratio:1;object-fit:cover}
+.chatbox{height:55vh;overflow-y:auto;background:white;padding:12px}
+.msg{padding:10px 14px;border-radius:18px;background:#eee;margin:8px;max-width:80%;width:fit-content}
+.mine{background:#d8edff;margin-left:auto}
+</style>
+</head>
+<body>
+
+<header>
+<div class="logo">InstaBR</div>
+<div>
+<button onclick="showPage('search')">🔍</button>
+<button onclick="showPage('messages')">💬</button>
+</div>
+</header>
+
+<section id="auth" class="auth">
+<h1>InstaBR</h1>
+<p>Compartilhe seus momentos.</p>
+<input id="email" type="email" placeholder="Seu email">
+<input id="password" type="password" placeholder="Senha">
+<input id="username" placeholder="Nome de usuário (cadastro)">
+<button class="primary" onclick="register()">Criar conta</button>
+<br><br>
+<button onclick="login()">Já tenho uma conta — Entrar</button>
+<p id="authStatus"></p>
+</section>
+
+<main id="app" class="hidden">
+
+<section id="home">
+<div class="stories" id="stories"></div>
+<div id="feed"></div>
+</section>
+
+<section id="search" class="page hidden">
+<h2>Pesquisar pessoas</h2>
+<input id="searchInput" placeholder="Buscar nome de usuário" oninput="searchUsers()">
+<div id="users"></div>
+</section>
+
+<section id="messages" class="page hidden">
+<h2>Mensagens</h2>
+<input id="chatUsername" placeholder="Nome de usuário para conversar">
+<button class="primary" onclick="openChat()">Abrir conversa</button>
+<div id="chatArea" class="hidden">
+<h3 id="chatTitle"></h3>
+<div id="chatMessages" class="chatbox"></div>
+<input id="messageInput" placeholder="Digite uma mensagem">
+<button class="primary" onclick="sendMessage()">Enviar</button>
+</div>
+</section>
+
+<section id="profile" class="page hidden">
+<div class="profile">
+<img id="myAvatar">
+<h2 id="myName"></h2>
+<p id="myBio"></p>
+<p id="myStats"></p>
+<input id="newAvatar" type="file" accept="image/*">
+<input id="newName" placeholder="Nome de exibição">
+<input id="newBio" placeholder="Sua biografia">
+<button class="primary" onclick="updateProfile()">Salvar perfil</button>
+<button onclick="logout()">Sair da conta</button>
+</div>
+<div id="myPosts" class="media-grid"></div>
+</section>
+
+</main>
+
+<nav id="navbar" class="hidden">
+<button onclick="showPage('home')">🏠</button>
+<button onclick="showPage('search')">🔍</button>
+<button onclick="publish('posts')">➕</button>
+<button onclick="publish('stories')">⭕</button>
+<button onclick="showPage('messages')">💬</button>
+<button onclick="showPage('profile')">👤</button>
+</nav>
+
+<input type="file" id="mediaPicker" accept="image/*,video/*" hidden>
+
+<script>
+// CONFIGURE AQUI
+const SUPABASE_URL = "https://aabiyocmlzvyxqrwciku.supabase.co/rest/v1/";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhYml5b2NtbHp2eXhxcndjaWt1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzNzM2ODQsImV4cCI6MjEwODk0OTY4NH0.-tG1H-GkUyjIy3rJm5r_HIqrF2AvgIOQD0SWjmOiF_g";
+
+const db = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+let user = null;
+let chatUser = null;
+let messageChannel = null;
+
+function status(t){
+ document.getElementById('authStatus').textContent=t;
+}
+
+async function register(){
+ const email=document.getElementById('email').value;
+ const password=document.getElementById('password').value;
+ const username=document.getElementById('username').value.trim().toLowerCase();
+
+ if(!email||!password||!username)return status('Preencha todos os campos.');
+ if(!/^[a-z0-9_.]{3,30}$/.test(username))return status('Nome de usuário inválido.');
+
+ const {data,error}=await db.auth.signUp({
+  email,password,
+  options:{data:{username,display_name:username}}
+ });
+
+ if(error)return status(error.message);
+ status('Cadastro realizado! Confirme seu email, se solicitado.');
+ if(data.session) startApp(data.session.user);
+}
+
+async function login(){
+ const {data,error}=await db.auth.signInWithPassword({
+  email:document.getElementById('email').value,
+  password:document.getElementById('password').value
+ });
+ if(error)return status(error.message);
+ startApp(data.user);
+}
+
+async function logout(){
+ await db.auth.signOut();
+ location.reload();
+}
+
+async function startApp(u){
+ user=u;
+ document.getElementById('auth').classList.add('hidden');
+ document.getElementById('app').classList.remove('hidden');
+ document.getElementById('navbar').classList.remove('hidden');
+ await loadProfile();
+ await loadFeed();
+ await loadStories();
+ subscribeMessages();
+}
+
+function showPage(id){
+ document.querySelectorAll('main>section').forEach(x=>x.classList.add('hidden'));
+ document.getElementById(id).classList.remove('hidden');
+ if(id==='home'){loadFeed();loadStories();}
+ if(id==='profile')loadProfile();
+}
+
+// PERFIL
+async function loadProfile(){
+ const {data}=await db.from('profiles').select('*').eq('id',user.id).single();
+ if(!data)return;
+ document.getElementById('myName').textContent='@'+data.username;
+ document.getElementById('myBio').textContent=data.bio||'Sem biografia';
+ document.getElementById('myAvatar').src=data.avatar_url||'https://placehold.co/100';
+ document.getElementById('newName').value=data.display_name||'';
+ document.getElementById('newBio').value=data.bio||'';
+
+ const {count}=await db.from('posts').select('*',{count:'exact',head:true}).eq('user_id',user.id);
+ const {count:followers}=await db.from('follows').select('*',{count:'exact',head:true}).eq('following_id',user.id);
+ const {count:following}=await db.from('follows').select('*',{count:'exact',head:true}).eq('follower_id',user.id);
+
+ document.getElementById('myStats').textContent=
+ `${count||0} publicações · ${followers||0} seguidores · ${following||0} seguindo`;
+
+ const {data:posts}=await db.from('posts').select('*').eq('user_id',user.id).order('created_at',{ascending:false});
+ document.getElementById('myPosts').innerHTML=(posts||[]).map(p=>mediaElement(p)).join('');
+}
+
+async function updateProfile(){
+ let avatar=null;
+ const file=document.getElementById('newAvatar').files[0];
+ if(file){
+  avatar=await uploadFile(file,'avatars');
+  if(!avatar)return;
+ }
+ const changes={
+  display_name:document.getElementById('newName').value,
+  bio:document.getElementById('newBio').value
+ };
+ if(avatar)changes.avatar_url=avatar;
+
+ const {error}=await db.from('profiles').update(changes).eq('id',user.id);
+ alert(error?error.message:'Perfil atualizado!');
+ loadProfile();
+}
+
+// UPLOAD
+async function uploadFile(file,bucket){
+ if(!file)return null;
+ if(file.size>50*1024*1024){alert('Arquivo maior que 50 MB.');return null;}
+ const path=user.id+'/'+crypto.randomUUID()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+ const {error}=await db.storage.from(bucket).upload(path,file);
+ if(error){alert(error.message);return null;}
+ return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+function publish(type){
+ const picker=document.getElementById('mediaPicker');
+ picker.value='';
+ picker.onchange=async()=>{
+  const file=picker.files[0];
+  if(!file)return;
+  if(!file.type.startsWith('image/')&&!file.type.startsWith('video/'))return alert('Escolha uma imagem ou vídeo.');
+  const bucket=type==='stories'?'stories':'posts';
+  const url=await uploadFile(file,bucket);
+  if(!url)return;
+
+  if(type==='posts'){
+   const caption=prompt('Escreva uma legenda:')||'';
+   const {error}=await db.from('posts').insert({
+    user_id:user.id,
+    media_url:url,
+    media_type:file.type.startsWith('video/')?'video':'image',
+    caption
+   });
+   if(error)alert(error.message);
+   loadFeed();
+  }else{
+   const {error}=await db.from('stories').insert({
+    user_id:user.id,
+    media_url:url,
+    media_type:file.type.startsWith('video/')?'video':'image'
+   });
+   if(error)alert(error.message);
+   loadStories();
+  }
+ };
+ picker.click();
+}
+
+// FEED
+function mediaElement(p){
+ return p.media_type==='video'
+ ? `<video src="${p.media_url}" controls playsinline style="width:100%"></video>`
+ : `<img src="${p.media_url}" class="postmedia">`;
+}
+
+async function loadFeed(){
+ const {data:posts,error}=await db.from('posts')
+ .select('*,profiles(username,avatar_url)')
+ .order('created_at',{ascending:false}).limit(40);
+
+ if(error)return;
+ const feed=document.getElementById('feed');
+ feed.innerHTML='';
+
+ for(const p of posts||[]){
+  const {count}=await db.from('likes').select('*',{count:'exact',head:true}).eq('post_id',p.id);
+  const {data:mine}=await db.from('likes').select('id').eq('post_id',p.id).eq('user_id',user.id).maybeSingle();
+
+  const div=document.createElement('article');
+  div.className='post';
+  const head=document.createElement('div');
+  head.className='posthead';
+  const avatar=document.createElement('img');
+  avatar.className='avatar';
+  avatar.src=p.profiles?.avatar_url||'https://placehold.co/50';
+  const name=document.createElement('b');
+  name.textContent='@'+(p.profiles?.username||'usuário');
+  head.append(avatar,name);
+
+  const media=document.createElement('div');
+  if(p.media_type==='video'){
+   const v=document.createElement('video');
+   v.src=p.media_url;v.controls=true;v.playsInline=true;
+   v.className='postmedia';media.append(v);
+  }else{
+   const img=document.createElement('img');
+   img.src=p.media_url;img.className='postmedia';media.append(img);
+  }
+
+  const actions=document.createElement('div');
+  actions.className='actions';
+  const like=document.createElement('button');
+  like.textContent=mine?'❤️':'🤍';
+  like.onclick=()=>toggleLike(p.id);
+  const comment=document.createElement('button');
+  comment.textContent='💬';
+  comment.onclick=()=>commentPost(p.id);
+  actions.append(like,comment);
+
+  const caption=document.createElement('div');
+  caption.className='caption';
+  const bold=document.createElement('b');
+  bold.textContent='@'+(p.profiles?.username||'usuário')+' ';
+  caption.append(bold,document.createTextNode(p.caption||''));
+  const likes=document.createElement('p');
+  likes.textContent=(count||0)+' curtidas';
+  caption.append(likes);
+
+  div.append(head,media,actions,caption);
+  feed.append(div);
+ }
+}
+
+async function toggleLike(postId){
+ const {data:existing}=await db.from('likes').select('id')
+ .eq('post_id',postId).eq('user_id',user.id).maybeSingle();
+
+ if(existing){
+  await db.from('likes').delete().eq('id',existing.id);
+ }else{
+  await db.from('likes').insert({post_id:postId,user_id:user.id});
+ }
+ loadFeed();
+}
+
+async function commentPost(postId){
+ const content=prompt('Escreva seu comentário:');
+ if(!content?.trim())return;
+ const {error}=await db.from('comments').insert({
+  post_id:postId,user_id:user.id,content:content.trim()
+ });
+ if(error)alert(error.message);
+ else alert('Comentário publicado!');
+}
+
+// STORIES
+async function loadStories(){
+ const {data}=await db.from('stories')
+ .select('*,profiles(username,avatar_url)')
+ .gt('expires_at',new Date().toISOString())
+ .order('created_at',{ascending:false});
+
+ const area=document.getElementById('stories');
+ area.innerHTML='';
+
+ for(const s of data||[]){
+  const item=document.createElement('div');
+  item.className='story';
+  const img=document.createElement('img');
+  img.src=s.profiles?.avatar_url||'https://placehold.co/60';
+  const name=document.createElement('div');
+  name.textContent=s.profiles?.username||'usuário';
+  item.append(img,name);
+  item.onclick=()=>{
+   if(s.media_type==='video'){
+    const w=window.open('');
+    if(w)w.document.body.innerHTML='<video controls autoplay style="width:100%" src="'+s.media_url+'"></video>';
+   }else{
+    window.open(s.media_url,'_blank');
+   }
+  };
+  area.append(item);
+ }
+}
+
+// BUSCAR PESSOAS
+async function searchUsers(){
+ const term=document.getElementById('searchInput').value.trim().replace(/^@/,'');
+ if(term.length<2)return document.getElementById('users').innerHTML='';
+
+ const {data}=await db.from('profiles').select('*')
+ .ilike('username','%'+term+'%').neq('id',user.id).limit(20);
+
+ const area=document.getElementById('users');
+ area.innerHTML='';
+ for(const p of data||[]){
+  const div=document.createElement('div');
+  div.className='posthead';
+  const name=document.createElement('b');
+  name.textContent='@'+p.username;
+  const btn=document.createElement('button');
+  btn.textContent='Seguir';
+  btn.onclick=async()=>{
+   const {error}=await db.from('follows').insert({
+    follower_id:user.id,following_id:p.id
+   });
+   if(error)alert(error.message);
+   else btn.textContent='Seguindo';
+  };
+  const msg=document.createElement('button');
+  msg.textContent='Mensagem';
+  msg.onclick=()=>{
+   document.getElementById('chatUsername').value=p.username;
+   showPage('messages');
+   openChat();
+  };
+  div.append(name,btn,msg);
+  area.append(div);
+ }
+}
+
+// MENSAGENS REAIS
+async function openChat(){
+ const username=document.getElementById('chatUsername').value.trim().replace(/^@/,'');
+ const {data:person,error}=await db.from('profiles')
+ .select('*').eq('username',username).maybeSingle();
+
+ if(error||!person||person.id===user.id)return alert('Usuário não encontrado.');
+ chatUser=person;
+ document.getElementById('chatTitle').textContent='Conversa com @'+person.username;
+ document.getElementById('chatArea').classList.remove('hidden');
+ await loadMessages();
+}
+
+async function loadMessages(){
+ if(!chatUser)return;
+ const {data,error}=await db.from('messages').select('*')
+ .or(`and(sender_id.eq.${user.id},receiver_id.eq.${chatUser.id}),and(sender_id.eq.${chatUser.id},receiver_id.eq.${user.id})`)
+ .order('created_at',{ascending:true});
+
+ if(error)return;
+ const area=document.getElementById('chatMessages');
+ area.innerHTML='';
+ for(const m of data||[]){
+  const div=document.createElement('div');
+  div.className='msg '+(m.sender_id===user.id?'mine':'');
+  div.textContent=m.content;
+  area.append(div);
+ }
+ area.scrollTop=area.scrollHeight;
+}
+
+async function sendMessage(){
+ const input=document.getElementById('messageInput');
+ const content=input.value.trim();
+ if(!content||!chatUser)return;
+ const {error}=await db.from('messages').insert({
+  sender_id:user.id,receiver_id:chatUser.id,content
+ });
+ if(error)return alert(error.message);
+ input.value='';
+ loadMessages();
+}
+
+function subscribeMessages(){
+ if(messageChannel)db.removeChannel(messageChannel);
+ messageChannel=db.channel('instabr-messages')
+ .on('postgres_changes',{
+  event:'INSERT',schema:'public',table:'messages'
+ },payload=>{
+  const m=payload.new;
+  if(chatUser&&(m.sender_id===chatUser.id||m.receiver_id===chatUser.id)){
+   loadMessages();
+  }
+ })
+ .subscribe();
+}
+
+// INICIAR SESSÃO EXISTENTE
+db.auth.getSession().then(({data})=>{
+ if(data.session)startApp(data.session.user);
+});
+</script>
+</body>
+</html>
